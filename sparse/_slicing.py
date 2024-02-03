@@ -1,5 +1,5 @@
-# Most of this file is taken from https://github.com/dask/dask/blob/master/dask/array/slicing.py
-# See license at https://github.com/dask/dask/blob/master/LICENSE.txt
+# Most of this file is taken from https://github.com/dask/dask/blob/main/dask/array/slicing.py
+# See license at https://github.com/dask/dask/blob/main/LICENSE.txt
 
 import math
 from collections.abc import Iterable
@@ -59,8 +59,7 @@ def normalize_index(idx, shape):
     idx = tuple(map(sanitize_index, idx))
     idx = tuple(map(replace_none, idx, none_shape))
     idx = posify_index(none_shape, idx)
-    idx = tuple(map(clip_slice, idx, none_shape))
-    return idx
+    return tuple(map(clip_slice, idx, none_shape))
 
 
 def replace_ellipsis(n, index):
@@ -74,14 +73,12 @@ def replace_ellipsis(n, index):
     isellipsis = [i for i, ind in enumerate(index) if ind is Ellipsis]
     if not isellipsis:
         return index
-    elif len(isellipsis) > 1:
+    if len(isellipsis) > 1:
         raise IndexError("an index can only have a single ellipsis ('...')")
-    else:
-        loc = isellipsis[0]
+
+    loc = isellipsis[0]
     extra_dimensions = n - (len(index) - sum(i is None for i in index) - 1)
-    return (
-        index[:loc] + (slice(None, None, None),) * extra_dimensions + index[loc + 1 :]
-    )
+    return index[:loc] + (slice(None, None, None),) * extra_dimensions + index[loc + 1 :]
 
 
 def check_index(ind, dimension):
@@ -112,15 +109,12 @@ def check_index(ind, dimension):
     # unknown dimension, assumed to be in bounds
     if isinstance(ind, Iterable):
         x = np.asanyarray(ind)
-        if (
-            np.issubdtype(x.dtype, np.integer)
-            and ((x >= dimension) | (x < -dimension)).any()
-        ):
-            raise IndexError("Index out of bounds for dimension {:d}".format(dimension))
-        elif x.dtype == bool and len(x) != dimension:
+        if np.issubdtype(x.dtype, np.integer) and ((x >= dimension) | (x < -dimension)).any():
+            raise IndexError(f"Index out of bounds for dimension {dimension:d}")
+        if x.dtype == np.bool_ and len(x) != dimension:
             raise IndexError(
-                "boolean index did not match indexed array; dimension is {:d} "
-                "but corresponding boolean dimension is {:d}".format(dimension, len(x))
+                f"boolean index did not match indexed array; dimension is {dimension:d} "
+                f"but corresponding boolean dimension is {len(x):d}"
             )
     elif isinstance(ind, slice):
         return
@@ -131,9 +125,7 @@ def check_index(ind, dimension):
         )
 
     elif ind >= dimension:
-        raise IndexError(
-            "Index is not smaller than dimension {:d} >= {:d}".format(ind, dimension)
-        )
+        raise IndexError(f"Index is not smaller than dimension {ind:d} >= {dimension:d}")
 
     elif ind < -dimension:
         msg = "Negative index is not greater than negative dimension {:d} <= -{:d}"
@@ -150,9 +142,9 @@ def sanitize_index(ind):
     array([1, 2, 3])
     >>> sanitize_index(np.array([False, True, True]))
     array([1, 2])
-    >>> type(sanitize_index(np.int32(0))) # doctest: +SKIP
+    >>> type(sanitize_index(np.int32(0)))  # doctest: +SKIP
     <type 'int'>
-    >>> sanitize_index(0.5) # doctest: +SKIP
+    >>> sanitize_index(0.5)  # doctest: +SKIP
     Traceback (most recent call last):
         ...
     IndexError: only integers, slices (`:`), ellipsis (`...`),
@@ -160,13 +152,13 @@ def sanitize_index(ind):
     """
     if ind is None:
         return None
-    elif isinstance(ind, slice):
+    if isinstance(ind, slice):
         return slice(
             _sanitize_index_element(ind.start),
             _sanitize_index_element(ind.stop),
             _sanitize_index_element(ind.step),
         )
-    elif isinstance(ind, Number):
+    if isinstance(ind, Number):
         return _sanitize_index_element(ind)
     if not hasattr(ind, "dtype") and len(ind) == 0:
         ind = np.array([], dtype=np.intp)
@@ -177,13 +169,13 @@ def sanitize_index(ind):
             # If a 1-element tuple, unwrap the element
             nonzero = nonzero[0]
         return np.asanyarray(nonzero)
-    elif np.issubdtype(ind.dtype, np.integer):
+    if np.issubdtype(ind.dtype, np.integer):
         return ind
-    else:
-        raise IndexError(
-            "only integers, slices (`:`), ellipsis (`...`), numpy.newaxis (`None`) and "
-            "integer or boolean arrays are valid indices"
-        )
+
+    raise IndexError(
+        "only integers, slices (`:`), ellipsis (`...`), numpy.newaxis (`None`) and "
+        "integer or boolean arrays are valid indices"
+    )
 
 
 def _sanitize_index_element(ind):
@@ -212,8 +204,8 @@ def posify_index(shape, ind):
     if isinstance(ind, Integral):
         if ind < 0 and not math.isnan(shape):
             return ind + shape
-        else:
-            return ind
+
+        return ind
     if isinstance(ind, (np.ndarray, list)) and not math.isnan(shape):
         ind = np.asanyarray(ind)
         return np.where(ind < 0, ind + shape, ind)

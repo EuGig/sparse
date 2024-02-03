@@ -1,7 +1,7 @@
 import numpy as np
 
-from ._coo.core import COO
 from ._compressed import GCXS
+from ._coo.core import COO
 
 
 def save_npz(filename, matrix, compressed=True):
@@ -29,15 +29,15 @@ def save_npz(filename, matrix, compressed=True):
     >>> import os
     >>> import sparse
     >>> import numpy as np
-    >>> dense_mat = np.array([[[0., 0.], [0., 0.70677779]], [[0., 0.], [0., 0.86522495]]])
+    >>> dense_mat = np.array([[[0.0, 0.0], [0.0, 0.70677779]], [[0.0, 0.0], [0.0, 0.86522495]]])
     >>> mat = sparse.COO(dense_mat)
     >>> mat
     <COO: shape=(2, 2, 2), dtype=float64, nnz=2, fill_value=0.0>
-    >>> sparse.save_npz('mat.npz', mat)
-    >>> loaded_mat = sparse.load_npz('mat.npz')
+    >>> sparse.save_npz("mat.npz", mat)
+    >>> loaded_mat = sparse.load_npz("mat.npz")
     >>> loaded_mat
     <COO: shape=(2, 2, 2), dtype=float64, nnz=2, fill_value=0.0>
-    >>> os.remove('mat.npz')
+    >>> os.remove("mat.npz")
 
     See Also
     --------
@@ -128,7 +128,5 @@ def load_npz(filename):
                 fill_value=fill_value,
                 compressed_axes=comp_axes,
             )
-        except KeyError:
-            raise RuntimeError(
-                "The file {!s} does not contain a valid sparse matrix".format(filename)
-            )
+        except KeyError as e:
+            raise RuntimeError(f"The file {filename!s} does not contain a valid sparse matrix") from e

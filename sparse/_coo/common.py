@@ -1,21 +1,21 @@
-from functools import reduce
 import operator
 import warnings
 from collections.abc import Iterable
-from typing import Callable, Optional
+from functools import reduce
+from typing import Any, NamedTuple, Optional
+
+import numba
 
 import numpy as np
-import scipy.sparse
-import numba
 
 from .._sparse_array import SparseArray
 from .._utils import (
-    isscalar,
-    is_unsigned_dtype,
-    normalize_axis,
-    check_zero_fill_value,
-    check_consistent_fill_value,
     can_store,
+    check_consistent_fill_value,
+    check_zero_fill_value,
+    is_unsigned_dtype,
+    isscalar,
+    normalize_axis,
 )
 
 
@@ -42,12 +42,11 @@ def asCOO(x, name="asCOO", check=True):
     ValueError
         If ``check`` is true and a dense input is supplied.
     """
+    from .._common import _is_sparse
     from .core import COO
 
-    if check and not isinstance(x, (SparseArray, scipy.sparse.spmatrix)):
-        raise ValueError(
-            "Performing this operation would produce a dense result: %s" % name
-        )
+    if check and not _is_sparse(x):
+        raise ValueError(f"Performing this operation would produce a dense result: {name}")
 
     if not isinstance(x, COO):
         x = COO(x)
@@ -62,8 +61,8 @@ def linear_loc(coords, shape):
         # Since `coords` is an array and not a sequence, we know the correct
         # dimensions.
         return np.zeros(coords.shape[1:], dtype=np.intp)
-    else:
-        return np.ravel_multi_index(coords, shape)
+
+    return np.ravel_multi_index(coords, shape)
 
 
 def kron(a, b):
@@ -87,28 +86,27 @@ def kron(a, b):
     Examples
     --------
     >>> from sparse import eye
-    >>> a = eye(3, dtype='i8')
-    >>> b = np.array([1, 2, 3], dtype='i8')
+    >>> a = eye(3, dtype="i8")
+    >>> b = np.array([1, 2, 3], dtype="i8")
     >>> res = kron(a, b)
     >>> res.todense()  # doctest: +SKIP
     array([[1, 2, 3, 0, 0, 0, 0, 0, 0],
            [0, 0, 0, 1, 2, 3, 0, 0, 0],
            [0, 0, 0, 0, 0, 0, 1, 2, 3]], dtype=int64)
     """
-    from .core import COO
+    from .._common import _is_sparse
     from .._umath import _cartesian_product
+    from .core import COO
 
     check_zero_fill_value(a, b)
 
-    a_sparse = isinstance(a, (SparseArray, scipy.sparse.spmatrix))
-    b_sparse = isinstance(b, (SparseArray, scipy.sparse.spmatrix))
+    a_sparse = _is_sparse(a)
+    b_sparse = _is_sparse(b)
     a_ndim = np.ndim(a)
     b_ndim = np.ndim(b)
 
     if not (a_sparse or b_sparse):
-        raise ValueError(
-            "Performing this operation would produce a dense " "result: kron"
-        )
+        raise ValueError("Performing this operation would produce a dense result: kron")
 
     if a_ndim == 0 or b_ndim == 0:
         return a * b
@@ -166,11 +164,7 @@ def concatenate(arrays, axis=0):
 
     arrays = [x if isinstance(x, COO) else COO(x) for x in arrays]
     axis = normalize_axis(axis, arrays[0].ndim)
-    assert all(
-        x.shape[ax] == arrays[0].shape[ax]
-        for x in arrays
-        for ax in set(range(arrays[0].ndim)) - {axis}
-    )
+    assert all(x.shape[ax] == arrays[0].shape[ax] for x in arrays for ax in set(range(arrays[0].ndim)) - {axis})
     nnz = 0
     dim = sum(x.shape[axis] for x in arrays)
     shape = list(arrays[0].shape)
@@ -288,9 +282,7 @@ def triu(x, k=0):
     check_zero_fill_value(x)
 
     if not x.ndim >= 2:
-        raise NotImplementedError(
-            "sparse.triu is not implemented for scalars or 1-D arrays."
-        )
+        raise NotImplementedError("sparse.triu is not implemented for scalars or 1-D arrays.")
 
     mask = x.coords[-2] + k <= x.coords[-1]
 
@@ -331,9 +323,7 @@ def tril(x, k=0):
     check_zero_fill_value(x)
 
     if not x.ndim >= 2:
-        raise NotImplementedError(
-            "sparse.tril is not implemented for scalars or 1-D arrays."
-        )
+        raise NotImplementedError("sparse.tril is not implemented for scalars or 1-D arrays.")
 
     mask = x.coords[-2] + k >= x.coords[-1]
 
@@ -401,10 +391,7 @@ def nanmean(x, axis=None, keepdims=False, dtype=None, out=None):
     assert out is None
     x = asCOO(x, name="nanmean")
 
-    if not (
-        np.issubdtype(x.dtype, np.floating)
-        or np.issubdtype(x.dtype, np.complexfloating)
-    ):
+    if not (np.issubdtype(x.dtype, np.floating) or np.issubdtype(x.dtype, np.complexfloating)):
         return x.mean(axis=axis, keepdims=keepdims, dtype=dtype)
 
     mask = np.isnan(x)
@@ -613,70 +600,12 @@ def argwhere(a):
     return np.transpose(a.nonzero())
 
 
-def _arg_minmax_common(
-    x: SparseArray,
-    axis: Optional[int],
-    keepdims: bool,
-    comp_op: Callable,
-    np_arg_func: Callable,
-):
-    """ """
-    assert comp_op in (operator.lt, operator.gt)
-    assert np_arg_func in (np.argmax, np.argmin)
-
-    if not isinstance(axis, (int, type(None))):
-        raise ValueError(f"axis must be int or None, but it's: {type(axis)}")
-
-    if isinstance(axis, int) and axis >= x.ndim:
-        raise ValueError(
-            f"axis {axis} is out of bounds for array of dimension {x.ndim}"
-        )
-
-    if x.fill_value != 0.0:
-        raise ValueError(
-            f"Only 0.0 fill value is supported, but found: {x.fill_value}."
-        )
-
-    if np.any(comp_op(x.data, 0.0)):
-        raise ValueError(
-            f"None of the non-zero values can be {comp_op.__name__} the fill value."
-        )
-
-    # fast path
-    if axis is None or x.ndim == 1:
-        x_flat = x.reshape(-1)
-        result = x_flat.coords[0, np_arg_func(x_flat.data)]
-        return np.array(result).reshape([1] * x.ndim) if keepdims else result
-
-    # search for min/max value & index for each retained axis
-    minmax_indexes = {}
-    minmax_values = {}
-
-    for idx, coord in enumerate(x.coords.T):
-        coord = list(coord)
-        axis_index = coord[axis]
-        coord[axis] = 0
-        coord = tuple(coord)
-        if not coord in minmax_values or comp_op(minmax_values[coord], x.data[idx]):
-            minmax_values[coord] = x.data[idx]
-            minmax_indexes[coord] = axis_index
-
-    new_shape = list(x.shape)
-    new_shape[axis] = 1
-    new_shape = tuple(new_shape)
-
-    result = np.zeros(shape=new_shape, dtype=np.intp)
-    for idx, minmax_index in minmax_indexes.items():
-        result[idx] = minmax_index
-
-    return result if keepdims else result.squeeze()
-
-
 def argmax(x, /, *, axis=None, keepdims=False):
     """
     Returns the indices of the maximum values along a specified axis.
     When the maximum value occurs multiple times, only the indices
     corresponding to the first occurrence are returned.
+
     Parameters
     ----------
     x : SparseArray
@@ -690,6 +619,7 @@ def argmax(x, /, *, axis=None, keepdims=False):
         as singleton dimensions, and, accordingly, the result must be compatible
         with the input array. Otherwise, if ``False``, the reduced axes (dimensions)
         must not be included in the result. Default: ``False``.
+
     Returns
     -------
     out : numpy.ndarray
@@ -697,9 +627,7 @@ def argmax(x, /, *, axis=None, keepdims=False):
         the first occurrence of the maximum value. Otherwise, a non-zero-dimensional
         array containing the indices of the maximum values.
     """
-    return _arg_minmax_common(
-        x, axis=axis, keepdims=keepdims, comp_op=operator.lt, np_arg_func=np.argmax
-    )
+    return _arg_minmax_common(x, axis=axis, keepdims=keepdims, mode="max")
 
 
 def argmin(x, /, *, axis=None, keepdims=False):
@@ -707,6 +635,7 @@ def argmin(x, /, *, axis=None, keepdims=False):
     Returns the indices of the minimum values along a specified axis.
     When the minimum value occurs multiple times, only the indices
     corresponding to the first occurrence are returned.
+
     Parameters
     ----------
     x : SparseArray
@@ -720,6 +649,7 @@ def argmin(x, /, *, axis=None, keepdims=False):
         as singleton dimensions, and, accordingly, the result must be compatible
         with the input array. Otherwise, if ``False``, the reduced axes (dimensions)
         must not be included in the result. Default: ``False``.
+
     Returns
     -------
     out : numpy.ndarray
@@ -727,9 +657,7 @@ def argmin(x, /, *, axis=None, keepdims=False):
         the first occurrence of the minimum value. Otherwise, a non-zero-dimensional
         array containing the indices of the minimum values.
     """
-    return _arg_minmax_common(
-        x, axis=axis, keepdims=keepdims, comp_op=operator.gt, np_arg_func=np.argmin
-    )
+    return _arg_minmax_common(x, axis=axis, keepdims=keepdims, mode="min")
 
 
 def _replace_nan(array, value):
@@ -818,8 +746,9 @@ def roll(a, shift, axis=None):
     res : ndarray
         Output array, with the same shape as a.
     """
-    from .core import COO, as_coo
     from numpy.core._exceptions import UFuncTypeError
+
+    from .core import COO, as_coo
 
     a = as_coo(a)
 
@@ -828,58 +757,50 @@ def roll(a, shift, axis=None):
         return roll(a.reshape((-1,)), shift, 0).reshape(a.shape)
 
     # roll across specified axis
-    else:
-        # parse axis input, wrap in tuple
-        axis = normalize_axis(axis, a.ndim)
-        if not isinstance(axis, tuple):
-            axis = (axis,)
+    # parse axis input, wrap in tuple
+    axis = normalize_axis(axis, a.ndim)
+    if not isinstance(axis, tuple):
+        axis = (axis,)
 
-        # make shift iterable
-        if not isinstance(shift, Iterable):
-            shift = (shift,)
+    # make shift iterable
+    if not isinstance(shift, Iterable):
+        shift = (shift,)
 
-        elif np.ndim(shift) > 1:
-            raise ValueError("'shift' and 'axis' must be integers or 1D sequences.")
+    elif np.ndim(shift) > 1:
+        raise ValueError("'shift' and 'axis' must be integers or 1D sequences.")
 
-        # handle broadcasting
-        if len(shift) == 1:
-            shift = np.full(len(axis), shift)
+    # handle broadcasting
+    if len(shift) == 1:
+        shift = np.full(len(axis), shift)
 
-        # check if dimensions are consistent
-        if len(axis) != len(shift):
-            raise ValueError(
-                "If 'shift' is a 1D sequence, " "'axis' must have equal length."
-            )
+    # check if dimensions are consistent
+    if len(axis) != len(shift):
+        raise ValueError("If 'shift' is a 1D sequence, 'axis' must have equal length.")
 
-        if not can_store(a.coords.dtype, max(a.shape + shift)):
-            raise ValueError(
-                "cannot roll with coords.dtype {} and shift {}. Try casting coords to a larger dtype.".format(
-                    a.coords.dtype,
-                    shift,
-                )
-            )
-
-        # shift elements
-        coords, data = np.copy(a.coords), np.copy(a.data)
-        try:
-            for sh, ax in zip(shift, axis):
-                coords[ax] += sh
-                coords[ax] %= a.shape[ax]
-        except UFuncTypeError:
-            if is_unsigned_dtype(coords.dtype):
-                raise ValueError(
-                    "rolling with coords.dtype as {} is not safe. Try using a signed dtype.".format(
-                        coords.dtype
-                    )
-                )
-
-        return COO(
-            coords,
-            data=data,
-            shape=a.shape,
-            has_duplicates=False,
-            fill_value=a.fill_value,
+    if not can_store(a.coords.dtype, max(a.shape + shift)):
+        raise ValueError(
+            f"cannot roll with coords.dtype {a.coords.dtype} and shift {shift}. Try casting coords to a larger dtype."
         )
+
+    # shift elements
+    coords, data = np.copy(a.coords), np.copy(a.data)
+    try:
+        for sh, ax in zip(shift, axis):
+            coords[ax] += sh
+            coords[ax] %= a.shape[ax]
+    except UFuncTypeError as e:
+        if is_unsigned_dtype(coords.dtype):
+            raise ValueError(
+                f"rolling with coords.dtype as {coords.dtype} is not safe. Try using a signed dtype."
+            ) from e
+
+    return COO(
+        coords,
+        data=data,
+        shape=a.shape,
+        has_duplicates=False,
+        fill_value=a.fill_value,
+    )
 
 
 def diagonal(a, offset=0, axis1=0, axis2=1):
@@ -902,13 +823,13 @@ def diagonal(a, offset=0, axis1=0, axis2=1):
     Examples
     --------
     >>> import sparse
-    >>> x = sparse.as_coo(np.arange(9).reshape(3,3))
+    >>> x = sparse.as_coo(np.arange(9).reshape(3, 3))
     >>> sparse.diagonal(x).todense()
     array([0, 4, 8])
-    >>> sparse.diagonal(x,offset=1).todense()
+    >>> sparse.diagonal(x, offset=1).todense()
     array([1, 5])
 
-    >>> x = sparse.as_coo(np.arange(12).reshape((2,3,2)))
+    >>> x = sparse.as_coo(np.arange(12).reshape((2, 3, 2)))
     >>> x_diag = sparse.diagonal(x, axis1=0, axis2=2)
     >>> x_diag.shape
     (3, 2)
@@ -936,9 +857,7 @@ def diagonal(a, offset=0, axis1=0, axis2=1):
     if a.shape[axis1] != a.shape[axis2]:
         raise ValueError("a.shape[axis1] != a.shape[axis2]")
 
-    diag_axes = [
-        axis for axis in range(len(a.shape)) if axis != axis1 and axis != axis2
-    ] + [axis1]
+    diag_axes = [axis for axis in range(len(a.shape)) if axis != axis1 and axis != axis2] + [axis1]
     diag_shape = [a.shape[axis] for axis in diag_axes]
     diag_shape[-1] -= abs(offset)
 
@@ -954,7 +873,8 @@ def diagonalize(a, axis=0):
     """
     Diagonalize a COO array. The new dimension is appended at the end.
 
-    .. WARNING:: :obj:`diagonalize` is not :obj:`numpy` compatible as there is no direct :obj:`numpy` equivalent. The API may change in the future.
+    .. WARNING:: :obj:`diagonalize` is not :obj:`numpy` compatible as there is no direct :obj:`numpy` equivalent. The
+      API may change in the future.
 
     Parameters
     ----------
@@ -966,22 +886,22 @@ def diagonalize(a, axis=0):
     Examples
     --------
     >>> import sparse
-    >>> x = sparse.as_coo(np.arange(1,4))
+    >>> x = sparse.as_coo(np.arange(1, 4))
     >>> sparse.diagonalize(x).todense()
     array([[1, 0, 0],
            [0, 2, 0],
            [0, 0, 3]])
 
-    >>> x = sparse.as_coo(np.arange(24).reshape((2,3,4)))
+    >>> x = sparse.as_coo(np.arange(24).reshape((2, 3, 4)))
     >>> x_diag = sparse.diagonalize(x, axis=1)
     >>> x_diag.shape
     (2, 3, 4, 3)
 
     :obj:`diagonalize` is the inverse of :obj:`diagonal`
 
-    >>> a = sparse.random((3,3,3,3,3), density=0.3)
+    >>> a = sparse.random((3, 3, 3, 3, 3), density=0.3)
     >>> a_diag = sparse.diagonalize(a, axis=2)
-    >>> (sparse.diagonal(a_diag, axis1=2, axis2=5) == a.transpose([0,1,3,4,2])).all()
+    >>> (sparse.diagonal(a_diag, axis1=2, axis2=5) == a.transpose([0, 1, 3, 4, 2])).all()
     True
 
     Returns
@@ -1091,13 +1011,7 @@ def _diagonal_idx(coordlist, axis1, axis2, offset):
     offset : int
         Offset of the diagonal from the main diagonal. Defaults to main diagonal (0).
     """
-    return np.array(
-        [
-            i
-            for i in range(len(coordlist[axis1]))
-            if coordlist[axis1][i] + offset == coordlist[axis2][i]
-        ]
-    )
+    return np.array([i for i in range(len(coordlist[axis1])) if coordlist[axis1][i] + offset == coordlist[axis2][i]])
 
 
 def clip(a, a_min=None, a_max=None, out=None):
@@ -1135,7 +1049,7 @@ def clip(a, a_min=None, a_max=None, out=None):
     array([1, 1, 1, 1, 2, 3])
     >>> sparse.clip(x, a_max=1).todense()  # doctest: +NORMALIZE_WHITESPACE
     array([0, 0, 0, 1, 1, 1])
-    >>> sparse.clip(x, a_min=1, a_max=2).todense() # doctest: +NORMALIZE_WHITESPACE
+    >>> sparse.clip(x, a_min=1, a_max=2).todense()  # doctest: +NORMALIZE_WHITESPACE
     array([1, 1, 1, 1, 2, 2])
 
     See Also
@@ -1144,3 +1058,505 @@ def clip(a, a_min=None, a_max=None, out=None):
     """
     a = asCOO(a, name="clip")
     return a.clip(a_min, a_max)
+
+
+def expand_dims(x, /, *, axis=0):
+    """
+    Expands the shape of an array by inserting a new axis (dimension) of size
+    one at the position specified by ``axis``.
+
+    Parameters
+    ----------
+    a : COO
+        Input COO array.
+    axis : int
+        Position in the expanded axes where the new axis is placed.
+
+    Returns
+    -------
+    result : COO
+        An expanded output COO array having the same data type as ``x``.
+
+    Examples
+    --------
+    >>> import sparse
+    >>> x = sparse.COO.from_numpy([[1, 0, 0, 0, 2, -3]])
+    >>> x.shape
+    (1, 6)
+    >>> y1 = sparse.expand_dims(x, axis=1)
+    >>> y1.shape
+    (1, 1, 6)
+    >>> y2 = sparse.expand_dims(x, axis=2)
+    >>> y2.shape
+    (1, 6, 1)
+
+    """
+
+    x = _validate_coo_input(x)
+
+    if not isinstance(axis, int):
+        raise IndexError(f"Invalid axis position: {axis}")
+
+    axis = normalize_axis(axis, x.ndim + 1)
+
+    new_coords = np.insert(x.coords, obj=axis, values=np.zeros(x.nnz, dtype=np.intp), axis=0)
+    new_shape = list(x.shape)
+    new_shape.insert(axis, 1)
+    new_shape = tuple(new_shape)
+
+    from .core import COO
+
+    return COO(
+        new_coords,
+        x.data,
+        shape=new_shape,
+        fill_value=x.fill_value,
+    )
+
+
+def flip(x, /, *, axis=None):
+    """
+    Reverses the order of elements in an array along the given axis.
+
+    The shape of the array is preserved.
+
+    Parameters
+    ----------
+    a : COO
+        Input COO array.
+    axis : int or tuple of ints, optional
+        Axis (or axes) along which to flip. If ``axis`` is ``None``, the function must
+        flip all input array axes. If ``axis`` is negative, the function must count from
+        the last dimension. If provided more than one axis, the function must flip only
+        the specified axes. Default: ``None``.
+
+    Returns
+    -------
+    result : COO
+        An output array having the same data type and shape as ``x`` and whose elements,
+        relative to ``x``, are reordered.
+
+    """
+
+    x = _validate_coo_input(x)
+
+    if axis is None:
+        axis = range(x.ndim)
+    if not isinstance(axis, Iterable):
+        axis = (axis,)
+
+    new_coords = x.coords.copy()
+    for ax in axis:
+        new_coords[ax, :] = x.shape[ax] - 1 - x.coords[ax, :]
+
+    from .core import COO
+
+    return COO(
+        new_coords,
+        x.data,
+        shape=x.shape,
+        fill_value=x.fill_value,
+    )
+
+
+# Array API set functions
+
+
+class UniqueCountsResult(NamedTuple):
+    values: np.ndarray
+    counts: np.ndarray
+
+
+def unique_counts(x, /):
+    """
+    Returns the unique elements of an input array `x`, and the corresponding
+    counts for each unique element in `x`.
+
+    Parameters
+    ----------
+    x : COO
+        Input COO array. It will be flattened if it is not already 1-D.
+
+    Returns
+    -------
+    out : namedtuple
+        The result containing:
+        * values - The unique elements of an input array.
+        * counts - The corresponding counts for each unique element.
+
+    Raises
+    ------
+    ValueError
+        If the input array is in a different format than COO.
+
+    Examples
+    --------
+    >>> import sparse
+    >>> x = sparse.COO.from_numpy([1, 0, 2, 1, 2, -3])
+    >>> sparse.unique_counts(x)
+    UniqueCountsResult(values=array([-3,  0,  1,  2]), counts=array([1, 1, 2, 2]))
+    """
+
+    x = _validate_coo_input(x)
+
+    x = x.flatten()
+    values, counts = np.unique(x.data, return_counts=True)
+    if x.nnz < x.size:
+        values = np.concatenate([[x.fill_value], values])
+        counts = np.concatenate([[x.size - x.nnz], counts])
+        sorted_indices = np.argsort(values)
+        values[sorted_indices] = values.copy()
+        counts[sorted_indices] = counts.copy()
+
+    return UniqueCountsResult(values, counts)
+
+
+def unique_values(x, /):
+    """
+    Returns the unique elements of an input array `x`.
+
+    Parameters
+    ----------
+    x : COO
+        Input COO array. It will be flattened if it is not already 1-D.
+
+    Returns
+    -------
+    out : ndarray
+        The unique elements of an input array.
+
+    Raises
+    ------
+    ValueError
+        If the input array is in a different format than COO.
+
+    Examples
+    --------
+    >>> import sparse
+    >>> x = sparse.COO.from_numpy([1, 0, 2, 1, 2, -3])
+    >>> sparse.unique_values(x)
+    array([-3, 0, 1, 2])
+    """
+
+    x = _validate_coo_input(x)
+
+    x = x.flatten()
+    values = np.unique(x.data)
+    if x.nnz < x.size:
+        values = np.sort(np.concatenate([[x.fill_value], values]))
+    return values
+
+
+def sort(x, /, *, axis=-1, descending=False):
+    """
+    Returns a sorted copy of an input array ``x``.
+
+    Parameters
+    ----------
+    x : SparseArray
+        Input array. Should have a real-valued data type.
+    axis : int
+        Axis along which to sort. If set to ``-1``, the function must sort along
+        the last axis. Default: ``-1``.
+    descending : bool
+        Sort order. If ``True``, the array must be sorted in descending order (by value).
+        If ``False``, the array must be sorted in ascending order (by value).
+        Default: ``False``.
+
+    Returns
+    -------
+    out : COO
+        A sorted array.
+
+    Raises
+    ------
+    ValueError
+        If the input array isn't and can't be converted to COO format.
+
+    Examples
+    --------
+    >>> import sparse
+    >>> x = sparse.COO.from_numpy([1, 0, 2, 0, 2, -3])
+    >>> sparse.sort(x).todense()
+    array([-3, 0, 0, 1, 2, 2])
+    >>> sparse.sort(x, descending=True).todense()
+    array([ 2, 2, 1, 0, 0, -3])
+
+    """
+
+    from .._common import moveaxis
+    from .core import COO
+
+    x = _validate_coo_input(x)
+
+    original_ndim = x.ndim
+    if x.ndim == 1:
+        x = x[None, :]
+        axis = -1
+
+    x = moveaxis(x, source=axis, destination=-1)
+    x_shape = x.shape
+    x = x.reshape((-1, x_shape[-1]))
+
+    new_coords, new_data = _sort_coo(x.coords, x.data, x.fill_value, sort_axis_len=x_shape[-1], descending=descending)
+
+    x = COO(new_coords, new_data, x.shape, has_duplicates=False, sorted=True, fill_value=x.fill_value)
+
+    x = x.reshape(x_shape[:-1] + (x_shape[-1],))
+    x = moveaxis(x, source=-1, destination=axis)
+
+    return x if original_ndim == x.ndim else x.squeeze()
+
+
+def take(x, indices, /, *, axis=None):
+    """
+    Returns elements of an array along an axis.
+
+    Parameters
+    ----------
+    x : SparseArray
+        Input array.
+    indices : ndarray
+        Array indices. The array must be one-dimensional and have an integer data type.
+    axis : int
+        Axis over which to select values. If ``axis`` is negative, the function must
+        determine the axis along which to select values by counting from the last dimension.
+        For ``None``, the flattened input array is used. Default: ``None``.
+
+    Returns
+    -------
+    out : COO
+        A COO array with requested indices.
+
+    Raises
+    ------
+    ValueError
+        If the input array isn't and can't be converted to COO format.
+    """
+
+    x = _validate_coo_input(x)
+
+    if axis is None:
+        x = x.flatten()
+        return x[indices]
+
+    axis = normalize_axis(axis, x.ndim)
+    full_index = (slice(None),) * axis + (indices, ...)
+    return x[full_index]
+
+
+def _validate_coo_input(x: Any):
+    from .._common import _is_scipy_sparse_obj
+    from .core import COO
+
+    if _is_scipy_sparse_obj(x):
+        x = COO.from_scipy_sparse(x)
+    elif not isinstance(x, SparseArray):
+        raise ValueError(f"Input must be an instance of SparseArray, but it's {type(x)}.")
+    elif not isinstance(x, COO):
+        x = x.asformat(COO)
+
+    return x
+
+
+@numba.jit(nopython=True, nogil=True)
+def _sort_coo(
+    coords: np.ndarray,
+    data: np.ndarray,
+    fill_value: float,
+    sort_axis_len: int,
+    descending: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    assert coords.shape[0] == 2
+    group_coords = coords[0, :]
+    sort_coords = coords[1, :]
+
+    data = data.copy()
+    result_indices = np.empty_like(sort_coords)
+
+    # We iterate through all groups and sort each one of them.
+    # first and last index of a group is tracked.
+    prev_group = -1
+    group_first_idx = -1
+    group_last_idx = -1
+    # We add `-1` sentinel to know when the last group ends
+    for idx, group in enumerate(np.append(group_coords, -1)):
+        if group == prev_group:
+            continue
+
+        if prev_group != -1:
+            group_last_idx = idx
+
+            group_slice = slice(group_first_idx, group_last_idx)
+            group_size = group_last_idx - group_first_idx
+
+            # SORT VALUES
+            if group_size > 1:
+                # np.sort in numba doesn't support `np.sort`'s arguments so `stable`
+                # keyword can't be supported.
+                # https://numba.pydata.org/numba-doc/latest/reference/numpysupported.html#other-methods
+                data[group_slice] = np.sort(data[group_slice])
+                if descending:
+                    data[group_slice] = data[group_slice][::-1]
+
+            # SORT INDICES
+            fill_value_count = sort_axis_len - group_size
+            indices = np.arange(group_size)
+            # find a place where fill_value would be
+            for pos in range(group_size):
+                if (not descending and fill_value < data[group_slice][pos]) or (
+                    descending and fill_value > data[group_slice][pos]
+                ):
+                    indices[pos:] += fill_value_count
+                    break
+            result_indices[group_first_idx:group_last_idx] = indices
+
+        prev_group = group
+        group_first_idx = idx
+
+    return np.vstack((group_coords, result_indices)), data
+
+
+@numba.jit(nopython=True, nogil=True)
+def _compute_minmax_args(
+    coords: np.ndarray,
+    data: np.ndarray,
+    reduce_size: int,
+    fill_value: float,
+    max_mode_flag: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    assert coords.shape[0] == 2
+    reduce_coords = coords[0, :]
+    index_coords = coords[1, :]
+
+    result_indices = np.unique(index_coords)
+    result_data = []
+
+    # we iterate through each trace
+    for result_index in np.nditer(result_indices):
+        mask = index_coords == result_index
+        masked_reduce_coords = reduce_coords[mask]
+        masked_data = data[mask]
+
+        compared_data = operator.gt(masked_data, fill_value) if max_mode_flag else operator.lt(masked_data, fill_value)
+
+        if np.any(compared_data) or len(masked_data) == reduce_size:
+            # best value is a non-fill value
+            best_arg = np.argmax(masked_data) if max_mode_flag else np.argmin(masked_data)
+            result_data.append(masked_reduce_coords[best_arg])
+        else:
+            # best value is a fill value, find the first occurrence of it
+            current_coord = np.array(-1, dtype=coords.dtype)
+            found = False
+            for idx, new_coord in enumerate(np.nditer(np.sort(masked_reduce_coords))):
+                # there is at least one fill value between consecutive non-fill values
+                if new_coord - current_coord > 1:
+                    result_data.append(idx)
+                    found = True
+                    break
+                current_coord = new_coord
+            # get the first fill value after all non-fill values
+            if not found:
+                result_data.append(current_coord + 1)
+
+    return (result_indices, result_data)
+
+
+def _arg_minmax_common(
+    x: SparseArray,
+    axis: Optional[int],
+    keepdims: bool,
+    mode: str,
+):
+    """
+    Internal implementation for argmax and argmin functions.
+    """
+    assert mode in ("max", "min")
+    max_mode_flag = mode == "max"
+
+    x = _validate_coo_input(x)
+
+    if not isinstance(axis, (int, type(None))):
+        raise ValueError(f"`axis` must be `int` or `None`, but it's: {type(axis)}.")
+    if isinstance(axis, int) and axis >= x.ndim:
+        raise ValueError(f"`axis={axis}` is out of bounds for array of dimension {x.ndim}.")
+    if x.ndim == 0:
+        raise ValueError("Input array must be at least 1-D, but it's 0-D.")
+
+    # If `axis` is None then we need to flatten the input array and memorize
+    # the original dimensionality for the final reshape operation.
+    axis_none_original_ndim: Optional[int] = None
+    if axis is None:
+        axis_none_original_ndim = x.ndim
+        x = x.reshape(-1)[:, None]
+        axis = 0
+
+    # A 1-D array must have one more singleton dimension.
+    if axis == 0 and x.ndim == 1:
+        x = x[:, None]
+
+    # We need to move `axis` to the front.
+    new_transpose = list(range(x.ndim))
+    new_transpose.insert(0, new_transpose.pop(axis))
+    new_transpose = tuple(new_transpose)
+
+    # And reshape it to 2-D (reduce axis, the rest of axes flattened)
+    new_shape = list(x.shape)
+    new_shape.insert(0, new_shape.pop(axis))
+    new_shape = tuple(new_shape)
+
+    x = x.transpose(new_transpose)
+    x = x.reshape((new_shape[0], np.prod(new_shape[1:])))
+
+    # Compute max/min arguments
+    result_indices, result_data = _compute_minmax_args(
+        x.coords.copy(),
+        x.data.copy(),
+        reduce_size=x.shape[0],
+        fill_value=x.fill_value,
+        max_mode_flag=max_mode_flag,
+    )
+
+    from .core import COO
+
+    result = COO(result_indices, result_data, shape=(x.shape[1],), fill_value=0, prune=True)
+
+    # Let's reshape the result to the original shape.
+    result = result.reshape((1, *new_shape[1:]))
+    new_transpose = list(range(result.ndim))
+    new_transpose.insert(axis, new_transpose.pop(0))
+    result = result.transpose(new_transpose)
+
+    # If `axis=None` we need to reshape flattened array into original dimensionality.
+    if axis_none_original_ndim is not None:
+        result = result.reshape([1 for _ in range(axis_none_original_ndim)])
+
+    return result if keepdims else result.squeeze()
+
+
+def matrix_transpose(x, /):
+    """
+    Transposes a matrix or a stack of matrices.
+
+    Parameters
+    ----------
+    x : SparseArray
+        Input array.
+
+    Returns
+    -------
+    out : COO
+        Transposed COO array.
+
+    Raises
+    ------
+    ValueError
+        If the input array isn't and can't be converted to COO format, or if ``x.ndim < 2``.
+    """
+    if hasattr(x, "ndim") and x.ndim < 2:
+        raise ValueError("`x.ndim >= 2` must hold.")
+    x = _validate_coo_input(x)
+    transpose_axes = list(range(x.ndim))
+    transpose_axes[-2:] = transpose_axes[-2:][::-1]
+
+    return x.transpose(transpose_axes)

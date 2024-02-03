@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 #
 # sparse documentation build configuration file, created by
 # sphinx-quickstart on Fri Dec 29 20:58:03 2017.
@@ -21,7 +20,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath(".."))
-from sparse import __version__  # flake8: noqa E402
+from sparse import __version__  # noqa: E402
 
 # -- General configuration ------------------------------------------------
 
@@ -49,9 +48,7 @@ extensions = [
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
 
-mathjax_path = (
-    "https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"
-)
+mathjax_path = "https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"
 
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
@@ -59,8 +56,8 @@ mathjax_path = (
 # source_suffix = ['.rst', '.md']
 source_suffix = ".rst"
 
-# The master toctree document.
-master_doc = "index"
+# The main toctree document.
+root_doc = "index"
 
 # General information about the project.
 project = "sparse"
@@ -154,15 +151,13 @@ latex_elements = {
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
-latex_documents = [
-    (master_doc, "sparse.tex", "sparse Documentation", "Sparse Developers", "manual")
-]
+latex_documents = [(root_doc, "sparse.tex", "sparse Documentation", "Sparse Developers", "manual")]
 
 # -- Options for manual page output ---------------------------------------
 
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
-man_pages = [(master_doc, "sparse", "sparse Documentation", [author], 1)]
+man_pages = [(root_doc, "sparse", "sparse Documentation", [author], 1)]
 
 # -- Options for Texinfo output -------------------------------------------
 
@@ -171,7 +166,7 @@ man_pages = [(master_doc, "sparse", "sparse Documentation", [author], 1)]
 #  dir menu entry, description, category)
 texinfo_documents = [
     (
-        master_doc,
+        root_doc,
         "sparse",
         "sparse Documentation",
         author,

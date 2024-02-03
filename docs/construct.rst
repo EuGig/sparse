@@ -20,13 +20,16 @@ matrix:
    ...           [0, 1, 2, 3, 4]]
    >>> data = [10, 20, 30, 40, 50]
    >>> s = sparse.COO(coords, data, shape=(5, 5))
-
-   >>> s.todense()
-   array([[10,  0,  0,  0,  0],
-          [ 0, 20,  0,  0,  0],
-          [ 0,  0, 30,  0,  0],
-          [ 0,  0,  0, 40,  0],
-          [ 0,  0,  0,  0, 50]])
+   >>> s
+   <COO: shape=(5, 5), dtype=int64, nnz=5, fill_value=0>
+        0    1    2    3    4
+     ┌                         ┐
+   0 │ 10                      │
+   1 │      20                 │
+   2 │           30            │
+   3 │                40       │
+   4 │                     50  │
+     └                         ┘
 
 In general :code:`coords` should be a :code:`(ndim, nnz)` shaped
 array. Each row of :code:`coords` contains one dimension of the
@@ -47,6 +50,15 @@ identity matrix:
    ...           [0, 1, 2, 3]]
    >>> data = 1
    >>> s = sparse.COO(coords, data, shape=(4, 4))
+   >>> s
+   <COO: shape=(4, 4), dtype=int64, nnz=4, fill_value=0>
+        0    1    2    3
+     ┌                    ┐
+   0 │  1                 │
+   1 │       1            │
+   2 │            1       │
+   3 │                 1  │
+     └                    ┘
 
 You can, and should, pass in :obj:`numpy.ndarray` objects for
 :code:`coords` and :code:`data`.
@@ -61,9 +73,19 @@ explicitly. For example, if we did the following without the
 
 .. code-block:: python
 
-   coords = [[0, 3, 2, 1], [4, 1, 2, 0]]
-   data = [1, 4, 2, 1]
-   s = COO(coords, data, shape=(5, 5))
+   >>> coords = [[0, 3, 2, 1], [4, 1, 2, 0]]
+   >>> data = [1, 4, 2, 1]
+   >>> s = COO(coords, data, shape=(5, 5))
+   >>> s
+   <COO: shape=(5, 5), dtype=int64, nnz=4, fill_value=0>
+        0    1    2    3    4
+     ┌                         ┐
+   0 │                      1  │
+   1 │  1                      │
+   2 │            2            │
+   3 │       4                 │
+   4 │                         │
+     └                         ┘
 
 :obj:`COO` arrays support arbitrary fill values. Fill values are the "default"
 value, or value to not store. This can be given a value other than zero. For
@@ -73,9 +95,16 @@ with nonzero fill values.
 
 .. code-block:: python
 
-   coords = [[0, 1], [1, 0]]
-   data = [0, 0]
-   s = COO(coords, data, fill_value=1)
+   >>> coords = [[0, 1], [1, 0]]
+   >>> data = [0, 0]
+   >>> s = COO(coords, data, fill_value=1)
+   >>> s
+   <COO: shape=(2, 2), dtype=int64, nnz=2, fill_value=1>
+        0    1
+     ┌          ┐
+   0 │       0  │
+   1 │  0       │
+     └          ┘
 
 From :std:doc:`Scipy sparse matrices <scipy:reference/generated/scipy.sparse.spmatrix>`
 ---------------------------------------------------------------------------------------
@@ -142,7 +171,7 @@ DOK arrays also support fancy indexing assignment if and only if all dimensions 
 
 Alongside indexing assignment and retrieval, :obj:`DOK` arrays support any arbitrary broadcasting function
 to any number of arguments where the arguments can be :obj:`SparseArray` objects, :obj:`scipy.sparse.spmatrix`
-objects, or :obj:`numpy.ndarrays`. 
+objects, or :obj:`numpy.ndarrays`.
 
 .. code-block:: python
 
@@ -161,7 +190,7 @@ and return a new boolean :obj:`DOK` array.
    y = np.random.random((10, 10))
    x == y
 
-:obj:`DOK` arrays are returned from elemwise functions and standard ufuncs if and only if all 
+:obj:`DOK` arrays are returned from elemwise functions and standard ufuncs if and only if all
 :obj:`SparseArray` objects are obj:`DOK` arrays. Otherwise, a :obj:`COO` array or dense array are returned.
 
 At the end, you can convert the :obj:`DOK` array to a :obj:`COO` arrays.

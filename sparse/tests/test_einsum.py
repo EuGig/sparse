@@ -1,7 +1,8 @@
-import pytest
-import numpy as np
 import sparse
 
+import pytest
+
+import numpy as np
 
 einsum_cases = [
     "a,->a",
@@ -98,9 +99,7 @@ def test_einsum(subscripts, density):
         assert np.allclose(numpy_out, sparse_out.todense())
 
 
-@pytest.mark.parametrize(
-    "input", [[[0, 0]], [[0, Ellipsis]], [[Ellipsis, 1], [Ellipsis]], [[0, 1], [0]]]
-)
+@pytest.mark.parametrize("input", [[[0, 0]], [[0, Ellipsis]], [[Ellipsis, 1], [Ellipsis]], [[0, 1], [0]]])
 @pytest.mark.parametrize("density", [0.1, 1.0])
 def test_einsum_nosubscript(input, density):
     d = 4
@@ -127,9 +126,7 @@ def test_einsum_no_input():
         sparse.einsum()
 
 
-@pytest.mark.parametrize(
-    "subscript", ["a+b->c", "i->&", "i->ij", "ij->jij", "a..,a...", ".i...", "a,a->->"]
-)
+@pytest.mark.parametrize("subscript", ["a+b->c", "i->&", "i->ij", "ij->jij", "a..,a...", ".i...", "a,a->->"])
 def test_einsum_invalid_input(subscript):
     x = sparse.random(shape=(2,), density=0.5, format="coo")
     y = sparse.random(shape=(2,), density=0.5, format="coo")
@@ -165,11 +162,9 @@ format_test_cases = [
 
 
 @pytest.mark.parametrize("formats,expected", format_test_cases)
-def test_einsum_format(formats, expected):
+def test_einsum_format(formats, expected, rng):
     inputs = [
-        np.random.randn(2, 2, 2)
-        if format == "dense"
-        else sparse.random((2, 2, 2), density=0.5, format=format)
+        rng.standard_normal((2, 2, 2)) if format == "dense" else sparse.random((2, 2, 2), density=0.5, format=format)
         for format in formats
     ]
     if len(inputs) == 1:
@@ -195,3 +190,15 @@ def test_einsum_shape_check():
     y = sparse.random((2, 3, 4), density=0.5)
     with pytest.raises(ValueError):
         sparse.einsum("abc,acb", x, y)
+
+
+@pytest.mark.parametrize("dtype", [np.int64, np.complex128])
+def test_einsum_dtype(dtype):
+    x = sparse.random((3, 3), density=0.5) * 10.0
+    x = x.astype(np.float64)
+
+    y = sparse.COO.from_numpy(np.ones((3, 1), dtype=np.float64))
+
+    result = sparse.einsum("ij,i->j", x, y, dtype=dtype)
+
+    assert result.dtype == dtype

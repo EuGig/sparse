@@ -1,11 +1,12 @@
 import functools
-from collections.abc import Iterable
-from numbers import Integral
-from functools import reduce
-
 import operator
-import numpy as np
+from collections.abc import Iterable
+from functools import reduce
+from numbers import Integral
+
 import numba
+
+import numpy as np
 
 
 def assert_eq(x, y, check_nnz=True, compare_dtype=True, **kwargs):
@@ -58,7 +59,8 @@ def assert_gcxs_slicing(s, x):
     s: sparse product matrix
     x: dense product matrix
     """
-    row = np.random.randint(s.shape[s.ndim - 2])
+    rng = np.random.default_rng()
+    row = rng.integers(s.shape[s.ndim - 2])
     assert np.allclose(s[0][row].data, [num for num in x[0][row] if num != 0])
 
     # regression test
@@ -78,10 +80,7 @@ def assert_nnz(s, x):
 
 
 def is_canonical(x):
-    return not x.shape or (
-        (np.diff(x.linear_loc()) > 0).all()
-        and not equivalent(x.data, x.fill_value).any()
-    )
+    return not x.shape or ((np.diff(x.linear_loc()) > 0).all() and not equivalent(x.data, x.fill_value).any())
 
 
 def _zero_of_dtype(dtype):
@@ -102,7 +101,7 @@ def _zero_of_dtype(dtype):
 
 
 @numba.jit(nopython=True, nogil=True)
-def algD(n, N, random_state=None):
+def algD(n, N, random_state):
     """
     Random Sampling without Replacement
     Alg D proposed by J.S. Vitter in Faster Methods for Random Sampling
@@ -111,26 +110,23 @@ def algD(n, N, random_state=None):
         N = size of system (elements)
         random_state = seed for random number generation
     """
-
-    if random_state != None:
-        np.random.seed(random_state)
-    n = np.int64(n + 1)
-    N = np.int64(N)
+    n = np.intp(n + 1)
+    N = np.intp(N)
     qu1 = N - n + 1
-    Vprime = np.exp(np.log(np.random.rand()) / n)
+    Vprime = np.exp(np.log(random_state.random()) / n)
     i = 0
-    arr = np.zeros(n - 1, dtype=np.int64)
+    arr = np.zeros(n - 1, dtype=np.intp)
     arr[-1] = -1
     while n > 1:
         nmin1inv = 1 / (n - 1)
         while True:
             while True:
                 X = N * (1 - Vprime)
-                S = np.int64(X)
-                if S < qu1:
+                S = np.intp(X)
+                if qu1 > S:
                     break
-                Vprime = np.exp(np.log(np.random.rand()) / n)
-            y1 = np.exp(np.log(np.random.rand() * N / qu1) * nmin1inv)
+                Vprime = np.exp(np.log(random_state.random()) / n)
+            y1 = np.exp(np.log(random_state.random() * N / qu1) * nmin1inv)
             Vprime = y1 * (1 - X / N) * (qu1 / (qu1 - S))
             if Vprime <= 1:
                 break
@@ -149,10 +145,10 @@ def algD(n, N, random_state=None):
                 top -= 1
                 bottom -= 1
                 t -= 1
-            if N / (N - X) >= y1 * np.exp(np.log(y2) / nmin1inv):
-                Vprime = np.exp(np.log(np.random.rand()) * nmin1inv)
+            if y1 * np.exp(np.log(y2) / nmin1inv) <= N / (N - X):
+                Vprime = np.exp(np.log(random_state.random()) * nmin1inv)
                 break
-            Vprime = np.exp(np.log(np.random.rand()) / n)
+            Vprime = np.exp(np.log(random_state.random()) / n)
         arr[i] = arr[i - 1] + S + 1
         i += 1
         N = N - S - 1
@@ -162,7 +158,7 @@ def algD(n, N, random_state=None):
 
 
 @numba.jit(nopython=True, nogil=True)
-def algA(n, N, random_state=None):
+def algA(n, N, random_state):
     """
     Random Sampling without Replacement
     Alg A proposed by J.S. Vitter in Faster Methods for Random Sampling
@@ -171,16 +167,14 @@ def algA(n, N, random_state=None):
         N = size of system (elements)
         random_state = seed for random number generation
     """
-    if random_state != None:
-        np.random.seed(random_state)
-    n = np.int64(n)
-    N = np.int64(N)
-    arr = np.zeros(n, dtype=np.int64)
+    n = np.intp(n)
+    N = np.intp(N)
+    arr = np.zeros(n, dtype=np.intp)
     arr[-1] = -1
     i = 0
     top = N - n
     while n >= 2:
-        V = np.random.rand()
+        V = random_state.random()
         S = 0
         quot = top / N
         while quot > V:
@@ -192,7 +186,7 @@ def algA(n, N, random_state=None):
         i += 1
         N -= 1
         n -= 1
-    S = np.int64(N * np.random.rand())
+    S = np.intp(N * random_state.random())
     arr[i] = arr[i - 1] + S + 1
     i += 1
     return arr
@@ -203,23 +197,26 @@ def reverse(inv, N):
     """
     If density of random matrix is greater than .5, it is faster to sample states not included
     Parameters:
-        arr = np.array(np.int64) of indices to be excluded from sample
+        arr = np.array(np.intp) of indices to be excluded from sample
         N = size of the system (elements)
     """
-    N = np.int64(N)
-    a = np.zeros(np.int64(N - len(inv)), dtype=np.int64)
+    N = np.intp(N)
+    a = np.zeros(np.intp(N - len(inv)), dtype=np.intp)
     j = 0
     k = 0
     for i in range(N):
         if j == len(inv):
             a[k:] = np.arange(i, N)
             break
-        elif i == inv[j]:
+        if i == inv[j]:
             j += 1
         else:
             a[k] = i
             k += 1
     return a
+
+
+default_rng = np.random.default_rng()
 
 
 def random(
@@ -245,7 +242,7 @@ def random(
     nnz : int, optional
         Number of nonzero elements in the generated array.
         Mutually exclusive with `density`.
-    random_state : Union[numpy.random.RandomState, int], optional
+    random_state : Union[numpy.random.Generator, int], optional
         Random number generator or random seed. If not given, the
         singleton numpy.random will be used. This random state will be used
         for sampling the sparsity structure, but not necessarily for sampling
@@ -286,7 +283,7 @@ def random(
 
     """
     # Copied, in large part, from scipy.sparse.random
-    # See https://github.com/scipy/scipy/blob/master/LICENSE.txt
+    # See https://github.com/scipy/scipy/blob/main/LICENSE.txt
     from ._coo import COO
 
     if density is not None and nnz is not None:
@@ -295,24 +292,21 @@ def random(
     if density is None:
         density = 0.01
     if not (0 <= density <= 1):
-        raise ValueError("density {} is not in the unit interval".format(density))
+        raise ValueError(f"density {density} is not in the unit interval")
 
     elements = np.prod(shape, dtype=np.intp)
 
     if nnz is None:
         nnz = int(elements * density)
     if not (0 <= nnz <= elements):
-        raise ValueError(
-            "cannot generate {} nonzero elements "
-            "for an array with {} total elements".format(nnz, elements)
-        )
+        raise ValueError(f"cannot generate {nnz} nonzero elements for an array with {elements} total elements")
 
     if random_state is None:
-        random_state = np.random
+        random_state = default_rng
     elif isinstance(random_state, Integral):
-        random_state = np.random.RandomState(random_state)
+        random_state = np.random.default_rng(random_state)
     if data_rvs is None:
-        data_rvs = random_state.rand
+        data_rvs = random_state.random
 
     if nnz == elements or density >= 1:
         ind = np.arange(elements)
@@ -326,19 +320,16 @@ def random(
         # Using algorithm A for dens > .1
         if elements > 10 * nnztemp:
             ind = reverse(
-                algD(nnztemp, elements, random_state.choice(np.iinfo(np.int32).max)),
+                algD(nnztemp, elements, random_state),
                 elements,
             )
         else:
             ind = reverse(
-                algA(nnztemp, elements, random_state.choice(np.iinfo(np.int32).max)),
+                algA(nnztemp, elements, random_state),
                 elements,
             )
     else:
-        if elements > 10 * nnz:
-            ind = algD(nnz, elements, random_state.choice(np.iinfo(np.int32).max))
-        else:
-            ind = algA(nnz, elements, random_state.choice(np.iinfo(np.int32).max))
+        ind = algD(nnz, elements, random_state) if elements > 10 * nnz else algA(nnz, elements, random_state)
     data = data_rvs(nnz)
 
     ar = COO(
@@ -352,9 +343,7 @@ def random(
         if can_store(idx_dtype, max(shape)):
             ar.coords = ar.coords.astype(idx_dtype)
         else:
-            raise ValueError(
-                "cannot cast array with shape {} to dtype {}.".format(shape, idx_dtype)
-            )
+            raise ValueError(f"cannot cast array with shape {shape} to dtype {idx_dtype}.")
 
     return ar.asformat(format, **kwargs)
 
@@ -369,9 +358,9 @@ def random_value_array(value, fraction):
     def replace_values(n):
         i = int(n * fraction)
 
-        ar = np.empty((n,), dtype=np.float_)
+        ar = np.empty((n,), dtype=np.float64)
         ar[:i] = value
-        ar[i:] = np.random.rand(n - i)
+        ar[i:] = default_rng.random(n - i)
         return ar
 
     return replace_values
@@ -403,17 +392,17 @@ def normalize_axis(axis, ndim):
             axis += ndim
 
         if axis >= ndim or axis < 0:
-            raise ValueError("Invalid axis index %d for ndim=%d" % (axis, ndim))
+            raise ValueError(f"Invalid axis index {axis} for ndim={ndim}")
 
         return axis
 
     if isinstance(axis, Iterable):
         if not all(isinstance(a, Integral) for a in axis):
-            raise ValueError("axis %s not understood" % axis)
+            raise ValueError(f"axis {axis} not understood")
 
         return tuple(normalize_axis(a, ndim) for a in axis)
 
-    raise ValueError("axis %s not understood" % axis)
+    raise ValueError(f"axis {axis} not understood")
 
 
 def equivalent(x, y):
@@ -452,33 +441,31 @@ def equivalent(x, y):
 
     # Can contain NaNs
     # FIXME: Complex floats and np.void with multiple values can't be compared properly.
-    # lgtm [py/comparison-of-identical-expressions]
-    return (x == y) | ((x != x) & (y != y))
+    return (x == y) | ((x != x) & (y != y))  # noqa: PLR0124
 
 
 # copied from zarr
-# See https://github.com/zarr-developers/zarr-python/blob/master/zarr/util.py
+# See https://github.com/zarr-developers/zarr-python/blob/main/zarr/util.py
 def human_readable_size(size):
     if size < 2**10:
-        return "%s" % size
-    elif size < 2**20:
-        return "%.1fK" % (size / float(2**10))
-    elif size < 2**30:
-        return "%.1fM" % (size / float(2**20))
-    elif size < 2**40:
-        return "%.1fG" % (size / float(2**30))
-    elif size < 2**50:
-        return "%.1fT" % (size / float(2**40))
-    else:
-        return "%.1fP" % (size / float(2**50))
+        return str(size)
+    if size < 2**20:
+        return f"{size / 2**10:.1f}K"
+    if size < 2**30:
+        return f"{size / 2**20:.1f}M"
+    if size < 2**40:
+        return f"{size / 2**30:.1f}G"
+    if size < 2**50:
+        return f"{size / 2**40:.1f}T"
+
+    return f"{size / 2**50:.1f}P"
 
 
 def html_table(arr):
-    table = "<table>"
-    table += "<tbody>"
+    table = ["<table><tbody>"]
     headings = ["Format", "Data Type", "Shape", "nnz", "Density", "Read-only"]
 
-    density = np.float_(arr.nnz) / np.float_(arr.size)
+    density = np.float64(arr.nnz) / np.float64(arr.size)
 
     info = [
         type(arr).__name__.lower(),
@@ -496,11 +483,7 @@ def html_table(arr):
         info.append(human_readable_size(arr.nbytes))
         headings.append("Storage ratio")
         info.append(
-            "%.1f"
-            % (
-                np.float_(arr.nbytes)
-                / np.float_(reduce(operator.mul, arr.shape, 1) * arr.dtype.itemsize)
-            )
+            f"{np.float64(arr.nbytes) / np.float64(reduce(operator.mul, arr.shape, 1) * arr.dtype.itemsize):.2f}"
         )
 
     # compressed_axes
@@ -509,15 +492,9 @@ def html_table(arr):
         info.append(str(arr.compressed_axes))
 
     for h, i in zip(headings, info):
-        table += (
-            "<tr>"
-            '<th style="text-align: left">%s</th>'
-            '<td style="text-align: left">%s</td>'
-            "</tr>" % (h, i)
-        )
-    table += "</tbody>"
-    table += "</table>"
-    return table
+        table.append(f'<tr><th style="text-align: left">{h}</th><td style="text-align: left">{i}</td></tr>')
+    table.append("</tbody></table>")
+    return "".join(table)
 
 
 def check_compressed_axes(ndim, compressed_axes):
@@ -579,12 +556,10 @@ def check_zero_fill_value(*args):
     ValueError: This operation requires zero fill values, but argument 1 had a fill value of 0.5.
     """
     for i, arg in enumerate(args):
-        if hasattr(arg, "fill_value") and not equivalent(
-            arg.fill_value, _zero_of_dtype(arg.dtype)
-        ):
+        if hasattr(arg, "fill_value") and not equivalent(arg.fill_value, _zero_of_dtype(arg.dtype)):
             raise ValueError(
                 "This operation requires zero fill values, "
-                "but argument {:d} had a fill value of {!s}.".format(i, arg.fill_value)
+                f"but argument {i:d} had a fill value of {arg.fill_value!s}."
             )
 
 
@@ -627,9 +602,9 @@ def check_consistent_fill_value(arrays):
         if not equivalent(fv, arg.fill_value):
             raise ValueError(
                 "This operation requires consistent fill-values, "
-                "but argument {:d} had a fill value of {!s}, which "
-                "is different from a fill_value of {!s} in the first "
-                "argument.".format(i, arg.fill_value, fv)
+                f"but argument {i:d} had a fill value of {arg.fill_value!s}, which "
+                f"is different from a fill_value of {fv!s} in the first "
+                "argument."
             )
 
 
@@ -645,7 +620,7 @@ def can_store(dtype, scalar):
 
 
 def is_unsigned_dtype(dtype):
-    return not np.array(-1, dtype=dtype) == np.array(-1)
+    return np.array(-1, dtype=dtype) != np.array(-1)
 
 
 def convert_format(format):

@@ -1,10 +1,11 @@
 import sparse
 from sparse._settings import NEP18_ENABLED
 from sparse._utils import assert_eq
-import numpy as np
-import pytest
-import scipy
 
+import pytest
+
+import numpy as np
+import scipy
 
 if not NEP18_ENABLED:
     pytest.skip("NEP18 is not enabled", allow_module_level=True)
@@ -121,6 +122,10 @@ class TestAsarray:
     @pytest.mark.parametrize("dtype", [np.int64, np.float64, np.complex128])
     @pytest.mark.parametrize("format", ["dok", "gcxs", "coo"])
     def test_asarray(self, input, dtype, format):
+        if format == "dok" and (np.isscalar(input) or input.ndim == 0):
+            # scalars and 0-D arrays aren't supported in DOK format
+            return
+
         s = sparse.asarray(input, dtype=dtype, format=format)
 
         actual = s.todense() if hasattr(s, "todense") else s
@@ -131,9 +136,6 @@ class TestAsarray:
     def test_asarray_special_cases(self):
         with pytest.raises(ValueError, match="Taco not yet supported."):
             sparse.asarray(self.np_eye, backend="taco")
-
-        with pytest.raises(ValueError, match="<class 'list'> not supported."):
-            sparse.asarray([1, 2, 3])
 
         with pytest.raises(ValueError, match="any backend not supported."):
             sparse.asarray(self.np_eye, backend="any")

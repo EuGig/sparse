@@ -1,15 +1,13 @@
-import numpy as np
-from numpy.core.numeric import indices
-import pytest
-import scipy.sparse
-from scipy.sparse import data
-from scipy.sparse import random
-import scipy.stats
-
 import sparse
 from sparse import COO
-from sparse._compressed.compressed import GCXS, CSR, CSC
+from sparse._compressed.compressed import CSC, CSR, GCXS
 from sparse._utils import assert_eq
+
+import pytest
+
+import numpy as np
+import scipy.sparse
+import scipy.stats
 
 
 @pytest.fixture(scope="module", params=[CSR, CSC])
@@ -23,11 +21,11 @@ def dtype(request):
 
 
 @pytest.fixture(scope="module")
-def random_sparse(cls, dtype):
+def random_sparse(cls, dtype, rng):
     if np.issubdtype(dtype, np.integer):
 
         def data_rvs(n):
-            return np.random.randint(-1000, 1000, n)
+            return rng.integers(-1000, 1000, n)
 
     else:
         data_rvs = None
@@ -35,17 +33,15 @@ def random_sparse(cls, dtype):
 
 
 @pytest.fixture(scope="module")
-def random_sparse_small(cls, dtype):
+def random_sparse_small(cls, dtype, rng):
     if np.issubdtype(dtype, np.integer):
 
         def data_rvs(n):
-            return np.random.randint(-10, 10, n)
+            return rng.integers(-10, 10, n)
 
     else:
         data_rvs = None
-    return cls(
-        sparse.random((20, 30, 40), density=0.25, data_rvs=data_rvs).astype(dtype)
-    )
+    return cls(sparse.random((20, 30, 40), density=0.25, data_rvs=data_rvs).astype(dtype))
 
 
 def test_repr(random_sparse):
@@ -104,10 +100,7 @@ def test_transpose(random_sparse, copy):
     tt = t.transpose(copy=copy)
 
     # Check if a copy was made
-    if copy:
-        check = is_not
-    else:
-        check = is_
+    check = is_not if copy else is_
 
     assert check(random_sparse.data, t.data)
     assert check(random_sparse.indices, t.indices)

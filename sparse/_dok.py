@@ -1,14 +1,12 @@
-from math import ceil
-from numbers import Integral
 from collections.abc import Iterable
+from numbers import Integral
 
 import numpy as np
-import scipy.sparse
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
 from ._slicing import normalize_index
-from ._utils import equivalent
 from ._sparse_array import SparseArray
+from ._utils import equivalent
 
 
 class DOK(SparseArray, NDArrayOperatorsMixin):
@@ -93,9 +91,10 @@ class DOK(SparseArray, NDArrayOperatorsMixin):
     """
 
     def __init__(self, shape, data=None, dtype=None, fill_value=None):
+        from ._common import _is_scipy_sparse_obj
         from ._coo import COO
 
-        self.data = dict()
+        self.data = {}
 
         if isinstance(shape, COO):
             ar = DOK.from_coo(shape)
@@ -107,7 +106,7 @@ class DOK(SparseArray, NDArrayOperatorsMixin):
             self._make_shallow_copy_of(ar)
             return
 
-        if isinstance(shape, scipy.sparse.spmatrix):
+        if _is_scipy_sparse_obj(shape):
             ar = DOK.from_scipy_sparse(shape)
             self._make_shallow_copy_of(ar)
             return
@@ -115,7 +114,7 @@ class DOK(SparseArray, NDArrayOperatorsMixin):
         self.dtype = np.dtype(dtype)
 
         if not data:
-            data = dict()
+            data = {}
 
         super().__init__(shape, fill_value=fill_value)
 
@@ -124,9 +123,7 @@ class DOK(SparseArray, NDArrayOperatorsMixin):
                 if not len(data):
                     self.dtype = np.dtype("float64")
                 else:
-                    self.dtype = np.result_type(
-                        *map(lambda x: np.asarray(x).dtype, data.values())
-                    )
+                    self.dtype = np.result_type(*(np.asarray(x).dtype for x in data.values()))
 
             for c, d in data.items():
                 self[c] = d
@@ -286,10 +283,10 @@ class DOK(SparseArray, NDArrayOperatorsMixin):
         Examples
         -------
         >>> import sparse
-        >>> s = sparse.random((5,5), density=0.2, format='dok')
+        >>> s = sparse.random((5, 5), density=0.2, format="dok")
         >>> s.format
         'dok'
-        >>> t = sparse.random((5,5), density=0.2, format='coo')
+        >>> t = sparse.random((5, 5), density=0.2, format="coo")
         >>> t.format
         'coo'
         """
@@ -313,7 +310,7 @@ class DOK(SparseArray, NDArrayOperatorsMixin):
         Examples
         --------
         >>> import sparse
-        >>> x = sparse.random((100,100),density=.1,format='dok')
+        >>> x = sparse.random((100, 100), density=0.1, format="dok")
         >>> x.nbytes
         8000
         """
@@ -325,9 +322,7 @@ class DOK(SparseArray, NDArrayOperatorsMixin):
 
         if all(isinstance(k, Iterable) for k in key):
             if len(key) != self.ndim:
-                raise NotImplementedError(
-                    f"Index sequences for all {self.ndim} array dimensions needed!"
-                )
+                raise NotImplementedError(f"Index sequences for all {self.ndim} array dimensions needed!")
             if not all(len(key[0]) == len(k) for k in key):
                 raise IndexError("Unequal length of index sequences!")
             return self._fancy_getitem(key)
@@ -357,18 +352,12 @@ class DOK(SparseArray, NDArrayOperatorsMixin):
         value = np.asarray(value, dtype=self.dtype)
 
         # 1D fancy indexing
-        if (
-            self.ndim == 1
-            and isinstance(key, Iterable)
-            and all(isinstance(i, (int, np.integer)) for i in key)
-        ):
+        if self.ndim == 1 and isinstance(key, Iterable) and all(isinstance(i, (int, np.integer)) for i in key):
             key = (key,)
 
         if isinstance(key, tuple) and all(isinstance(k, Iterable) for k in key):
             if len(key) != self.ndim:
-                raise NotImplementedError(
-                    f"Index sequences for all {self.ndim} array dimensions needed!"
-                )
+                raise NotImplementedError(f"Index sequences for all {self.ndim} array dimensions needed!")
             if not all(len(key[0]) == len(k) for k in key):
                 raise IndexError("Unequal length of index sequences!")
             self._fancy_setitem(key, value)
@@ -391,21 +380,17 @@ class DOK(SparseArray, NDArrayOperatorsMixin):
         elif values.ndim > 1:
             raise ValueError(f"Dimension of values ({values.ndim}) must be 0 or 1!")
         if not idxs[0].shape == values.shape:
-            raise ValueError(
-                f"Shape mismatch of indices ({idxs[0].shape}) and values ({values.shape})!"
-            )
+            raise ValueError(f"Shape mismatch of indices ({idxs[0].shape}) and values ({values.shape})!")
         fill_value = self.fill_value
         data = self.data
         for idx, value in zip(zip(*idxs), values):
-            if not value == fill_value:
+            if value != fill_value:
                 data[idx] = value
             elif idx in data:
                 del data[idx]
 
     def _setitem(self, key_list, value):
-        value_missing_dims = (
-            len([ind for ind in key_list if isinstance(ind, slice)]) - value.ndim
-        )
+        value_missing_dims = len([ind for ind in key_list if isinstance(ind, slice)]) - value.ndim
 
         if value_missing_dims < 0:
             raise ValueError("setting an array element with a sequence.")
@@ -431,18 +416,12 @@ class DOK(SparseArray, NDArrayOperatorsMixin):
                 key_list_temp = key_list[:]
                 for v_idx, ki in enumerate(range(start, stop, step)):
                     key_list_temp[i] = ki
-                    vi = (
-                        value
-                        if value_missing_dims > 0
-                        else (value[0] if value.shape[0] == 1 else value[v_idx])
-                    )
+                    vi = value if value_missing_dims > 0 else (value[0] if value.shape[0] == 1 else value[v_idx])
                     self._setitem(key_list_temp, vi)
 
                 return
-            elif not isinstance(ind, Integral):
-                raise IndexError(
-                    "All indices must be slices or integers when setting an item."
-                )
+            if not isinstance(ind, Integral):
+                raise IndexError("All indices must be slices or integers when setting an item.")
 
         key = tuple(key_list)
         if not equivalent(value, self.fill_value):
@@ -451,9 +430,7 @@ class DOK(SparseArray, NDArrayOperatorsMixin):
             del self.data[key]
 
     def __str__(self):
-        summary = "<DOK: shape={!s}, dtype={!s}, nnz={:d}, fill_value={!s}>".format(
-            self.shape, self.dtype, self.nnz, self.fill_value
-        )
+        summary = f"<DOK: shape={self.shape!s}, dtype={self.dtype!s}, nnz={self.nnz:d}, fill_value={self.fill_value!s}>"
         return self._str_impl(summary)
 
     __repr__ = __str__

@@ -1,10 +1,10 @@
-import sparse
+from sparse._compressed import convert
+from sparse._utils import assert_eq
+
 import pytest
-import numpy as np
 from numba.typed import List
 
-import sparse._compressed.convert as convert
-from sparse._utils import assert_eq
+import numpy as np
 
 
 def make_inds(shape):
@@ -14,8 +14,7 @@ def make_inds(shape):
 def make_increments(shape):
     inds = make_inds(shape)
     shape_bins = convert.transform_shape(np.asarray(shape))
-    increments = List([inds[i] * shape_bins[i] for i in range(len(shape))])
-    return increments
+    return List([inds[i] * shape_bins[i] for i in range(len(shape))])
 
 
 @pytest.mark.parametrize(
@@ -84,6 +83,4 @@ def test_compute_flat(shape, expected_subsample, subsample):
     ],
 )
 def test_transform_shape(shape, expected_shape):
-    assert_eq(
-        convert.transform_shape(np.asarray(shape)), expected_shape, compare_dtype=False
-    )
+    assert_eq(convert.transform_shape(np.asarray(shape)), expected_shape, compare_dtype=False)

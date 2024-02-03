@@ -1,40 +1,37 @@
 import sparse
-import pytest
-import numpy as np
-import scipy
-
 from sparse._compressed import GCXS
 from sparse._utils import assert_eq
 
+import pytest
+
+import numpy as np
+import scipy
+
 
 @pytest.fixture(scope="module", params=["f8", "f4", "i8", "i4"])
-def random_sparse(request):
+def random_sparse(request, rng):
     dtype = request.param
     if np.issubdtype(dtype, np.integer):
 
         def data_rvs(n):
-            return np.random.randint(-1000, 1000, n)
+            return rng.integers(-1000, 1000, n)
 
     else:
         data_rvs = None
-    return sparse.random(
-        (20, 30, 40), density=0.25, format="gcxs", data_rvs=data_rvs
-    ).astype(dtype)
+    return sparse.random((20, 30, 40), density=0.25, format="gcxs", data_rvs=data_rvs, random_state=rng).astype(dtype)
 
 
 @pytest.fixture(scope="module", params=["f8", "f4", "i8", "i4"])
-def random_sparse_small(request):
+def random_sparse_small(request, rng):
     dtype = request.param
     if np.issubdtype(dtype, np.integer):
 
         def data_rvs(n):
-            return np.random.randint(-10, 10, n)
+            return rng.integers(-10, 10, n)
 
     else:
         data_rvs = None
-    return sparse.random(
-        (20, 30, 40), density=0.25, format="gcxs", data_rvs=data_rvs
-    ).astype(dtype)
+    return sparse.random((20, 30, 40), density=0.25, format="gcxs", data_rvs=data_rvs, random_state=rng).astype(dtype)
 
 
 @pytest.mark.parametrize(
@@ -61,9 +58,7 @@ def test_reductions(reduction, random_sparse, axis, keepdims, kwargs):
     assert_eq(xx, yy)
 
 
-@pytest.mark.xfail(
-    reason=("Setting output dtype=float16 produces results " "inconsistent with numpy")
-)
+@pytest.mark.xfail(reason=("Setting output dtype=float16 produces results inconsistent with numpy"))
 @pytest.mark.filterwarnings("ignore:overflow")
 @pytest.mark.parametrize(
     "reduction, kwargs",
@@ -204,10 +199,7 @@ def test_tocoo():
 
 @pytest.mark.parametrize("complex", [True, False])
 def test_complex_methods(complex):
-    if complex:
-        x = np.array([1 + 2j, 2 - 1j, 0, 1, 0])
-    else:
-        x = np.array([1, 2, 0, 0, 0])
+    x = np.array([1 + 2j, 2 - 1j, 0, 1, 0]) if complex else np.array([1, 2, 0, 0, 0])
     s = GCXS.from_numpy(x)
     assert_eq(s.imag, x.imag)
     assert_eq(s.real, x.real)
@@ -273,9 +265,7 @@ def test_complex_methods(complex):
 )
 @pytest.mark.parametrize("compressed_axes", [(0,), (1,), (2,), (0, 1), (0, 2), (1, 2)])
 def test_slicing(index, compressed_axes):
-    s = sparse.random(
-        (2, 3, 4), density=0.5, format="gcxs", compressed_axes=compressed_axes
-    )
+    s = sparse.random((2, 3, 4), density=0.5, format="gcxs", compressed_axes=compressed_axes)
     x = s.todense()
     assert_eq(x[index], s[index])
 
@@ -297,9 +287,7 @@ def test_slicing(index, compressed_axes):
 )
 @pytest.mark.parametrize("compressed_axes", [(0,), (1,), (2,), (0, 1), (0, 2), (1, 2)])
 def test_advanced_indexing(index, compressed_axes):
-    s = sparse.random(
-        (2, 3, 4), density=0.5, format="gcxs", compressed_axes=compressed_axes
-    )
+    s = sparse.random((2, 3, 4), density=0.5, format="gcxs", compressed_axes=compressed_axes)
     x = s.todense()
 
     assert_eq(x[index], s[index])
@@ -345,9 +333,7 @@ def test_concatenate():
     zz = sparse.random((4, 3, 4), density=0.5, format="gcxs")
     z = zz.todense()
 
-    assert_eq(
-        np.concatenate([x, y, z], axis=0), sparse.concatenate([xx, yy, zz], axis=0)
-    )
+    assert_eq(np.concatenate([x, y, z], axis=0), sparse.concatenate([xx, yy, zz], axis=0))
 
     xx = sparse.random((5, 3, 1), density=0.5, format="gcxs")
     x = xx.todense()
@@ -356,13 +342,9 @@ def test_concatenate():
     zz = sparse.random((5, 3, 2), density=0.5, format="gcxs")
     z = zz.todense()
 
-    assert_eq(
-        np.concatenate([x, y, z], axis=2), sparse.concatenate([xx, yy, zz], axis=2)
-    )
+    assert_eq(np.concatenate([x, y, z], axis=2), sparse.concatenate([xx, yy, zz], axis=2))
 
-    assert_eq(
-        np.concatenate([x, y, z], axis=-1), sparse.concatenate([xx, yy, zz], axis=-1)
-    )
+    assert_eq(np.concatenate([x, y, z], axis=-1), sparse.concatenate([xx, yy, zz], axis=-1))
 
 
 @pytest.mark.parametrize("axis", [0, 1])
@@ -444,9 +426,7 @@ def test_from_coo_valerr():
 )
 @pytest.mark.parametrize("constant_values", [0, 1, 150, np.nan])
 def test_pad_valid(pad_width, constant_values):
-    y = sparse.random(
-        (50, 50, 3), density=0.15, fill_value=constant_values, format="gcxs"
-    )
+    y = sparse.random((50, 50, 3), density=0.15, fill_value=constant_values, format="gcxs")
     x = y.todense()
     xx = np.pad(x, pad_width=pad_width, constant_values=constant_values)
     yy = np.pad(y, pad_width=pad_width, constant_values=constant_values)

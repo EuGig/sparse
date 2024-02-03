@@ -27,7 +27,7 @@ you open a new issue, please make sure of the following:
 
 * This should go without saying, but make sure what you are requesting is within
   the scope of this project.
-* The bug/feature is still present/missing on the ``master`` branch on GitHub.
+* The bug/feature is still present/missing on the ``main`` branch on GitHub.
 * A similar issue or pull request isn't already open. If one already is, it's better
   to contribute to the discussion there.
 
@@ -36,7 +36,7 @@ Contributing Code
 
 This project has a number of requirements for all code contributed.
 
-* We use ``flake8`` to automatically lint the code and maintain code style.
+* We use ``pre-commit`` to automatically lint the code and maintain code style.
 * We use Numpy-style docstrings.
 * It's ideal if user-facing API changes or new features have documentation added.
 * 100% code coverage is recommended for all new code in any submitted PR. Doctests
